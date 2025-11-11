@@ -26,50 +26,70 @@ def buscar_info_produto_real(url):
     """
     
     # ----------------------------------------------------------------------
-    # --- INÍCIO DA LÓGICA DE WEB SCRAPING REAL ---
+    # --- INÍCIO DA LÓGICA DE WEB SCRAPING REAL (MELHORADA) ---
     # ----------------------------------------------------------------------
     
     try:
         # Configurar headers para simular um navegador real (necessário para a Amazon)
+        # O User-Agent foi atualizado para ser mais "comum"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
             'Accept-Encoding': 'gzip, deflate, br'
         }
         
         # Fazer a requisição HTTP
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=20) # Aumentado o timeout
         response.raise_for_status() # Lança exceção para erros HTTP (4xx ou 5xx)
         
         # Analisar o conteúdo HTML
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # 1. Título
+        # 1. Título - Tentando seletor mais genérico (e o original)
         titulo_elemento = soup.find(id='productTitle')
+        if not titulo_elemento:
+             titulo_elemento = soup.find('span', id='productTitle')
+             
         titulo = titulo_elemento.text.strip() if titulo_elemento else None
         
-        # 2. Preço Atual
-        # A Amazon esconde o preço real formatado na classe 'a-offscreen'
-        preco_atual_elemento = None
-        price_wrapper = soup.find(id='corePriceDisplay_desktop_feature_div')
-        if price_wrapper:
-            preco_atual_elemento = price_wrapper.find('span', class_='a-offscreen')
+        # 2. Preço Atual - Buscando em todos os elementos 'a-offscreen' e filtrando o primeiro
+        preco_atual = None
         
-        # Fallback para outros tipos de preço
-        if not preco_atual_elemento:
-             preco_atual_elemento = soup.find('span', class_='a-price aok-align-center reinventPriceBlock_ourprice')
-             if preco_atual_elemento:
-                 preco_atual_elemento = preco_atual_elemento.find('span', class_='a-offscreen')
+        # Tenta encontrar o preço principal dentro de 'a-offscreen' (local mais comum para o preço)
+        price_offscreen = soup.find('span', class_='a-offscreen')
+        
+        # Tenta encontrar no price block principal (para outros layouts)
+        price_main_block = soup.find(id='priceblock_ourprice') 
 
-        preco_atual = preco_atual_elemento.text.strip() if preco_atual_elemento else None
-
+        if price_offscreen:
+            # O preço com formatação correta (R$ XX,XX) costuma estar escondido aqui
+            preco_atual = price_offscreen.text.strip()
+        elif price_main_block:
+             preco_atual = price_main_block.text.strip()
+        else:
+            # Tenta encontrar o preço em outras estruturas comuns da Amazon, montando o valor
+            preco_atual_elemento = soup.find(class_='a-price-whole') 
+            if preco_atual_elemento:
+                centavos_elemento = soup.find(class_='a-price-fraction')
+                simbolo_elemento = soup.find(class_='a-price-symbol')
+                
+                preco_atual = ""
+                if simbolo_elemento:
+                    preco_atual += simbolo_elemento.text.strip() + " "
+                if preco_atual_elemento:
+                    preco_atual += preco_atual_elemento.text.strip()
+                if centavos_elemento:
+                    preco_atual += "," + centavos_elemento.text.strip()
+                # Se ainda estiver vazio, define como None
+                if preco_atual.strip() == "": preco_atual = None
+            
         # 3. Preço Antigo (Geralmente marcado com riscado na classe 'a-text-strike')
         preco_antigo_elemento = soup.find('span', class_='a-text-strike')
         preco_antigo = preco_antigo_elemento.text.strip() if preco_antigo_elemento else None
 
         
-        # Verifica se os dados essenciais foram encontrados
-        if titulo and preco_atual and preco_atual.startswith('R$'):
+        # Verifica se os dados essenciais foram encontrados e parecem válidos
+        if titulo and preco_atual and any(char.isdigit() for char in preco_atual):
             print(f"SCRAPING SUCESSO: Título: {titulo}, Preço: {preco_atual}")
             return {
                 "sucesso": True,
