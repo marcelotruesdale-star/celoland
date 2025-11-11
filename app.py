@@ -1,10 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import re
-# Importe as bibliotecas necessárias para web scraping aqui
-# Exemplo:
-# import requests
-# from bs4 import BeautifulSoup
+# Importe as bibliotecas necessárias para web scraping
+import requests
+from bs4 import BeautifulSoup
 # from decimal import Decimal # Para lidar com preços de forma segura
 
 # 1. Configuração do Flask
@@ -20,53 +19,73 @@ TELEGRAM_CHAT_ID = "-SEU_CHAT_ID_AQUI" # IDs de canais ou grupos costumam começ
 
 def buscar_info_produto_real(url):
     """
-    Função REAL de busca de dados do produto.
+    Função REAL de busca de dados do produto, extraindo informações do link da Amazon.
     
-    ESTE É O BLOCO QUE VOCÊ PRECISA MUDAR para extrair os dados da Amazon.
+    NOTA: Os seletores da Amazon podem mudar. Se o scraping falhar, os seletores
+    dentro do bloco 'try' precisam ser atualizados.
     """
     
     # ----------------------------------------------------------------------
     # --- INÍCIO DA LÓGICA DE WEB SCRAPING REAL ---
     # ----------------------------------------------------------------------
     
-    # Exemplo de lógica de extração (substitua pelo seu código real):
-    # try:
-    #     # 1. Configurar headers para parecer um navegador (necessário para Amazon)
-    #     headers = {
-    #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    #     }
-    #     
-    #     # 2. Fazer a requisição HTTP
-    #     response = requests.get(url, headers=headers, timeout=10)
-    #     response.raise_for_status() # Lança erro para status HTTP ruins (4xx ou 5xx)
-    #     
-    #     # 3. Analisar o conteúdo HTML
-    #     soup = BeautifulSoup(response.content, 'html.parser')
-    #     
-    #     # 4. Encontrar os elementos e extrair o texto
-    #     # ESTES SELECTORES SÃO EXEMPLOS E PODEM MUDAR NA AMAZON!
-    #     titulo_elemento = soup.find(id='productTitle')
-    #     preco_atual_elemento = soup.find('span', class_='a-price-whole') # Exemplo de selector de preço
-    #     
-    #     titulo = titulo_elemento.text.strip() if titulo_elemento else None
-    #     
-    #     # Precisa de lógica complexa para extrair e formatar o preço corretamente
-    #     preco_atual = f"R$ {preco_atual_elemento.text.strip()}" if preco_atual_elemento else None
-    #     
-    #     if titulo and preco_atual:
-    #         return {
-    #             "sucesso": True,
-    #             "titulo": titulo,
-    #             "preco_atual": preco_atual,
-    #             "preco_antigo": None # A lógica para preço 'de' é geralmente mais difícil de extrair
-    #         }
-    #     
-    # except Exception as e:
-    #     print(f"Erro durante o scraping: {e}")
-    #     pass # Segue para a simulação se o scraping falhar
+    try:
+        # Configurar headers para simular um navegador real (necessário para a Amazon)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br'
+        }
+        
+        # Fazer a requisição HTTP
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status() # Lança exceção para erros HTTP (4xx ou 5xx)
+        
+        # Analisar o conteúdo HTML
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # 1. Título
+        titulo_elemento = soup.find(id='productTitle')
+        titulo = titulo_elemento.text.strip() if titulo_elemento else None
+        
+        # 2. Preço Atual
+        # A Amazon esconde o preço real formatado na classe 'a-offscreen'
+        preco_atual_elemento = None
+        price_wrapper = soup.find(id='corePriceDisplay_desktop_feature_div')
+        if price_wrapper:
+            preco_atual_elemento = price_wrapper.find('span', class_='a-offscreen')
+        
+        # Fallback para outros tipos de preço
+        if not preco_atual_elemento:
+             preco_atual_elemento = soup.find('span', class_='a-price aok-align-center reinventPriceBlock_ourprice')
+             if preco_atual_elemento:
+                 preco_atual_elemento = preco_atual_elemento.find('span', class_='a-offscreen')
+
+        preco_atual = preco_atual_elemento.text.strip() if preco_atual_elemento else None
+
+        # 3. Preço Antigo (Geralmente marcado com riscado na classe 'a-text-strike')
+        preco_antigo_elemento = soup.find('span', class_='a-text-strike')
+        preco_antigo = preco_antigo_elemento.text.strip() if preco_antigo_elemento else None
+
+        
+        # Verifica se os dados essenciais foram encontrados
+        if titulo and preco_atual and preco_atual.startswith('R$'):
+            print(f"SCRAPING SUCESSO: Título: {titulo}, Preço: {preco_atual}")
+            return {
+                "sucesso": True,
+                "titulo": titulo,
+                "preco_atual": preco_atual,
+                "preco_antigo": preco_antigo
+            }
+        
+        # Se chegou aqui, os dados não foram encontrados ou estão em formato inesperado
+        raise Exception("Dados essenciais não encontrados na página (Scraping falhou).")
+            
+    except Exception as e:
+        print(f"Erro durante o scraping (voltando para a simulação): {e}")
         
     # ----------------------------------------------------------------------
-    # --- FIM DA LÓGICA DE WEB SCRAPING REAL (início da SIMULAÇÃO) ---
+    # --- FIM DA LÓGICA DE WEB SCRAPING REAL (início da SIMULAÇÃO/FALLBACK) ---
     # ----------------------------------------------------------------------
 
     # Tenta encontrar o ASIN (código do produto) na URL para simular diferentes respostas
@@ -76,16 +95,17 @@ def buscar_info_produto_real(url):
         print("SIMULAÇÃO: ASIN não encontrado. Retornando falha.")
         return {
             "sucesso": False,
-            "titulo": None,
+            "titulo": "Título não encontrado via Scraping ou Simulação.",
             "preco_atual": None,
             "preco_antigo": None
         }
 
-    # ASIN encontrado, retorna dados mockados de sucesso
-    print("SIMULAÇÃO: Retornando dados mockados com sucesso.")
+    # Se o scraping falhou (caiu no 'except' ou não encontrou os seletores),
+    # ele usa a lógica de simulação/mock (os dados fixos) como um FALLBACK para testar.
+    print("SIMULAÇÃO: Retornando dados mockados como fallback.")
     return {
         "sucesso": True,
-        "titulo": "Fone de Ouvido Bluetooth Premium com Cancelamento de Ruído (SIMULADO)",
+        "titulo": f"PRODUTO MOCKADO (Link: {url[:30]}...)",
         "preco_atual": "R$ 349,99",
         "preco_antigo": "R$ 499,90"
     }
