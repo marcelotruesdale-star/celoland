@@ -55,41 +55,51 @@ def buscar_info_produto_real(url):
         # 2. Preço Atual - Buscando em todos os elementos 'a-offscreen' e filtrando o primeiro
         preco_atual = None
         
-        # Tenta encontrar o preço principal dentro de 'a-offscreen' (local mais comum para o preço)
+        # Tenta 1: Encontrar o preço principal dentro de 'a-offscreen' (local mais comum para o preço)
         price_offscreen = soup.find('span', class_='a-offscreen')
-        
-        # Tenta encontrar no price block principal (para outros layouts)
-        price_main_block = soup.find(id='priceblock_ourprice') 
 
         if price_offscreen:
-            # O preço com formatação correta (R$ XX,XX) costuma estar escondido aqui
             preco_atual = price_offscreen.text.strip()
-        elif price_main_block:
-             preco_atual = price_main_block.text.strip()
         else:
-            # Tenta encontrar o preço em outras estruturas comuns da Amazon, montando o valor
-            preco_atual_elemento = soup.find(class_='a-price-whole') 
-            if preco_atual_elemento:
-                centavos_elemento = soup.find(class_='a-price-fraction')
-                simbolo_elemento = soup.find(class_='a-price-symbol')
-                
-                preco_atual = ""
-                if simbolo_elemento:
-                    preco_atual += simbolo_elemento.text.strip() + " "
-                if preco_atual_elemento:
-                    preco_atual += preco_atual_elemento.text.strip()
-                if centavos_elemento:
-                    preco_atual += "," + centavos_elemento.text.strip()
-                # Se ainda estiver vazio, define como None
-                if preco_atual.strip() == "": preco_atual = None
+            # Tenta 2: Encontrar no price block principal
+            price_main_block = soup.find(id='priceblock_ourprice') 
+            if price_main_block:
+                preco_atual = price_main_block.text.strip()
             
+            # Tenta 3: Encontrar na classe de preço mais comum 'priceToPay'
+            if not preco_atual:
+                price_to_pay = soup.find('span', class_='priceToPay')
+                if price_to_pay:
+                    price_offscreen_fallback = price_to_pay.find('span', class_='a-offscreen')
+                    if price_offscreen_fallback:
+                        preco_atual = price_offscreen_fallback.text.strip()
+            
+            # Tenta 4: Montar o valor a partir dos elementos de preço (inteiro e decimal)
+            if not preco_atual:
+                preco_atual_elemento = soup.find(class_='a-price-whole') 
+                if preco_atual_elemento:
+                    centavos_elemento = soup.find(class_='a-price-fraction')
+                    simbolo_elemento = soup.find(class_='a-price-symbol')
+                    
+                    preco_atual_str = ""
+                    if simbolo_elemento:
+                        preco_atual_str += simbolo_elemento.text.strip() + " "
+                    if preco_atual_elemento:
+                        preco_atual_str += preco_atual_elemento.text.strip()
+                    if centavos_elemento:
+                        preco_atual_str += "," + centavos_elemento.text.strip()
+                    
+                    preco_atual = preco_atual_str if preco_atual_str.strip() != "" else None
+
+
         # 3. Preço Antigo (Geralmente marcado com riscado na classe 'a-text-strike')
         preco_antigo_elemento = soup.find('span', class_='a-text-strike')
         preco_antigo = preco_antigo_elemento.text.strip() if preco_antigo_elemento else None
 
         
         # Verifica se os dados essenciais foram encontrados e parecem válidos
-        if titulo and preco_atual and any(char.isdigit() for char in preco_atual):
+        # Deve ter título E o preço deve conter "R$" ou ser um valor numérico (para garantir que não seja texto vazio)
+        if titulo and preco_atual and (preco_atual.startswith('R$') or any(char.isdigit() for char in preco_atual)):
             print(f"SCRAPING SUCESSO: Título: {titulo}, Preço: {preco_atual}")
             return {
                 "sucesso": True,
