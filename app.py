@@ -1,204 +1,206 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests
-from bs4 import BeautifulSoup
 import re
-import time # Opcional, pode ser removido se não for usado para delay em loops
+# Importe as bibliotecas necessárias para web scraping aqui
+# Exemplo:
+# import requests
+# from bs4 import BeautifulSoup
+# from decimal import Decimal # Para lidar com preços de forma segura
 
-# As seguintes importações foram removidas por não usarem mais Selenium:
-# from selenium import webdriver
-# from selenium.webdriver.chrome.service import Service
-# ... e todas as outras imports relacionadas ao selenium
-
+# 1. Configuração do Flask
 app = Flask(__name__)
-CORS(app)
+# Habilita CORS para permitir que o frontend (index.html) se comunique com o servidor
+CORS(app) 
 
-# 🔑 Configurações do Telegram
-# NOTA: Em produção, estas chaves devem ser lidas de Variáveis de Ambiente (muito mais seguro!)
-TELEGRAM_BOT_TOKEN = "8361375328:AAFnhlEZubW18IhNEoTGfFO4l6MlQJEUkEk"
-TELEGRAM_CHAT_ID = "-1003203872885"
+# Variáveis de Configuração (Substitua pelos seus dados reais no ambiente de produção)
+TELEGRAM_BOT_TOKEN = "SEU_TOKEN_BOT_AQUI"
+TELEGRAM_CHAT_ID = "-SEU_CHAT_ID_AQUI" # IDs de canais ou grupos costumam começar com '-'
 
-# --- NOVO CORE DE SCRAPING (Sem Selenium) ---
-def buscar_info_amazon_simples(url):
-    """Busca informações do produto na Amazon usando apenas requests e BeautifulSoup."""
+# --- Funções de Simulação/Realização (Web Scraping e Telegram) ---
+
+def buscar_info_produto_real(url):
+    """
+    Função REAL de busca de dados do produto.
     
-    # 🕵️ Simula um navegador real. CRUCIAL para não ser bloqueado imediatamente.
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-    }
+    ESTE É O BLOCO QUE VOCÊ PRECISA MUDAR para extrair os dados da Amazon.
+    """
     
-    try:
-        # Tenta a requisição GET
-        response = requests.get(url, headers=headers, timeout=10)
+    # ----------------------------------------------------------------------
+    # --- INÍCIO DA LÓGICA DE WEB SCRAPING REAL ---
+    # ----------------------------------------------------------------------
+    
+    # Exemplo de lógica de extração (substitua pelo seu código real):
+    # try:
+    #     # 1. Configurar headers para parecer um navegador (necessário para Amazon)
+    #     headers = {
+    #         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    #     }
+    #     
+    #     # 2. Fazer a requisição HTTP
+    #     response = requests.get(url, headers=headers, timeout=10)
+    #     response.raise_for_status() # Lança erro para status HTTP ruins (4xx ou 5xx)
+    #     
+    #     # 3. Analisar o conteúdo HTML
+    #     soup = BeautifulSoup(response.content, 'html.parser')
+    #     
+    #     # 4. Encontrar os elementos e extrair o texto
+    #     # ESTES SELECTORES SÃO EXEMPLOS E PODEM MUDAR NA AMAZON!
+    #     titulo_elemento = soup.find(id='productTitle')
+    #     preco_atual_elemento = soup.find('span', class_='a-price-whole') # Exemplo de selector de preço
+    #     
+    #     titulo = titulo_elemento.text.strip() if titulo_elemento else None
+    #     
+    #     # Precisa de lógica complexa para extrair e formatar o preço corretamente
+    #     preco_atual = f"R$ {preco_atual_elemento.text.strip()}" if preco_atual_elemento else None
+    #     
+    #     if titulo and preco_atual:
+    #         return {
+    #             "sucesso": True,
+    #             "titulo": titulo,
+    #             "preco_atual": preco_atual,
+    #             "preco_antigo": None # A lógica para preço 'de' é geralmente mais difícil de extrair
+    #         }
+    #     
+    # except Exception as e:
+    #     print(f"Erro durante o scraping: {e}")
+    #     pass # Segue para a simulação se o scraping falhar
         
-        # 🛑 Checa se a requisição foi bem-sucedida (código 200)
-        if response.status_code != 200:
-            # Se for 503 ou 403, geralmente significa bloqueio anti-bot.
-            return {'erro': f"Falha ao acessar a URL. Código de resposta: {response.status_code}", 'sucesso': False}
-            
-        soup = BeautifulSoup(response.content, 'html.parser')
+    # ----------------------------------------------------------------------
+    # --- FIM DA LÓGICA DE WEB SCRAPING REAL (início da SIMULAÇÃO) ---
+    # ----------------------------------------------------------------------
 
-        # --- BUSCA O TÍTULO ---
-        titulo = None
-        title_tag = soup.find('span', {'id': 'productTitle'})
-        if title_tag:
-            titulo = title_tag.get_text().strip()
-        
-        # --- BUSCA O PREÇO ATUAL (a-offscreen é o mais confiável sem JS) ---
-        preco_atual = None
-        price_tag_offscreen = soup.find('span', {'class': 'a-offscreen'})
-        if price_tag_offscreen and 'R$' in price_tag_offscreen.get_text():
-            preco_atual = price_tag_offscreen.get_text().strip().replace('\xa0', ' ')
-        
-        # Tenta buscar o preço visível (menos confiável, mas vale a tentativa)
-        if not preco_atual:
-             price_tag_visible = soup.find('span', {'class': 'a-price-whole'})
-             if price_tag_visible:
-                 cents_tag = soup.find('span', {'class': 'a-price-fraction'})
-                 if cents_tag:
-                     preco_atual = f"R$ {price_tag_visible.get_text().strip()},{cents_tag.get_text().strip()}"
-
-
-        # --- BUSCA O PREÇO ANTIGO (RISCADO) ---
-        preco_antigo = None
-        old_price_tag = soup.find('span', {'data-a-strike': 'true'})
-        if not old_price_tag:
-            old_price_tag = soup.find('span', {'class': 'a-text-price'})
-            
-        if old_price_tag:
-            preco_text = old_price_tag.get_text().strip()
-            # Usa Regex para garantir que só pega o valor R$ XX,XX
-            preco_match = re.search(r'R\$?\s*(\d+[.,]\d+)', preco_text)
-            if preco_match:
-                preco_antigo = f"R$ {preco_match.group(1).replace('.', ',')}"
-
-
-        # --- BUSCA A IMAGEM ---
-        imagem = None
-        img_tag = soup.find('img', {'id': 'landingImage'})
-        # A URL da imagem pode estar em outro atributo (data-a-dynamic-image) ou tag dependendo do layout
-        if img_tag and img_tag.get('src'):
-            imagem = img_tag.get('src')
-        
+    # Tenta encontrar o ASIN (código do produto) na URL para simular diferentes respostas
+    asin_match = re.search(r'/[A-Z0-9]{10}(/|$|\?)', url)
+    
+    if not asin_match:
+        print("SIMULAÇÃO: ASIN não encontrado. Retornando falha.")
         return {
-            'titulo': titulo,
-            'preco_atual': preco_atual,
-            'preco_antigo': preco_antigo,
-            'imagem': imagem,
-            'sucesso': titulo is not None
+            "sucesso": False,
+            "titulo": None,
+            "preco_atual": None,
+            "preco_antigo": None
         }
-        
-    except requests.exceptions.RequestException as e:
-        return {'erro': f"Erro de conexão (requests): {str(e)}", 'sucesso': False}
-    except Exception as e:
-        return {'erro': f"Erro inesperado no scraping: {str(e)}", 'sucesso': False}
 
-# --- Funções Auxiliares (mantidas) ---
+    # ASIN encontrado, retorna dados mockados de sucesso
+    print("SIMULAÇÃO: Retornando dados mockados com sucesso.")
+    return {
+        "sucesso": True,
+        "titulo": "Fone de Ouvido Bluetooth Premium com Cancelamento de Ruído (SIMULADO)",
+        "preco_atual": "R$ 349,99",
+        "preco_antigo": "R$ 499,90"
+    }
 
-def extrair_asin(link):
-    """Extrai o ASIN do link"""
-    match = re.search(r'/dp/([A-Z0-9]{10})', link)
-    return match.group(1) if match else None
-
-def formatar_link_afiliado(link, tag_afiliado):
-    """Formata o link com a tag de afiliado"""
-    asin = extrair_asin(link)
-    if not asin:
-        return link
+def enviar_mensagem_telegram_simulado(mensagem, link_afiliado):
+    """
+    SIMULA o envio da mensagem para o Telegram.
+    Em um ambiente real, você faria uma requisição POST para a API do Telegram.
+    """
+    print("\n--- SIMULAÇÃO DE ENVIO AO TELEGRAM ---")
+    print(f"Link de Afiliado (Final): {link_afiliado}")
+    print("\nConteúdo da Mensagem:")
+    print(mensagem)
+    print("---------------------------------------\n")
     
-    dominio = 'amazon.com.br' if 'amazon.com.br' in link else 'amazon.com'
-    return f"https://www.{dominio}/dp/{asin}?tag={tag_afiliado}"
+    # Se você quiser integrar de verdade, o código seria algo assim:
+    # telegram_api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    # payload = {
+    #     "chat_id": TELEGRAM_CHAT_ID,
+    #     "text": mensagem,
+    #     "parse_mode": "Markdown" # ou "HTML", dependendo do formato da sua mensagem
+    # }
+    # try:
+    #     response = requests.post(telegram_api_url, data=payload)
+    #     response.raise_for_status()
+    #     return response.json().get('ok', False)
+    # except Exception as e:
+    #     print(f"Erro ao enviar ao Telegram: {e}")
+    #     return False
 
+    # Retorna sucesso na simulação
+    return True
 
 # --- Endpoints da API ---
 
-@app.route('/api/buscar-produto', methods=['GET', 'POST']) 
-def buscar_produto():
-    """Endpoint para buscar as informações usando requisição simples."""
-    
-    # Prioriza o 'url' dos parâmetros GET (para formulário do Google Sites)
-    url = request.args.get('url', '')
-    
-    # Se não veio no GET e veio um POST (JSON), tenta o JSON
-    if not url and request.method == 'POST' and request.json:
-        url = request.json.get('url', '')
-    
-    if not url or 'amazon.com' not in url:
-        return jsonify({'erro': 'URL inválida da Amazon. Certifique-se de que o campo do formulário é "name=url"', 'sucesso': False}), 400
-    
-    # Chama a função de scraping simplificada
-    info = buscar_info_amazon_simples(url) 
-    return jsonify(info)
+@app.route('/api/teste-conexao', methods=['GET'])
+def teste_conexao():
+    """Endpoint para verificar se o servidor está rodando."""
+    return jsonify({"ok": True, "mensagem": "Conexão Flask OK!"})
 
+@app.route('/api/buscar-produto', methods=['POST'])
+def buscar_produto():
+    """Endpoint para buscar informações do produto dado um link da Amazon."""
+    data = request.get_json()
+    link = data.get('url')
+    
+    if not link:
+        return jsonify({"sucesso": False, "erro": "Link da Amazon é obrigatório"}), 400
+
+    # Chamada à função de busca REAL/SIMULADA
+    resultado = buscar_info_produto_real(link)
+    
+    return jsonify(resultado)
 
 @app.route('/api/enviar-telegram', methods=['POST'])
 def enviar_telegram():
-    """Envia a oferta para o Telegram"""
-    data = request.json
+    """Endpoint para formatar a mensagem e simular o envio ao Telegram."""
+    dados = request.get_json()
     
-    nome = data.get('nome', '')
-    link = data.get('link', '')
-    tag_afiliado = data.get('tag_afiliado', '')
-    preco_de = data.get('preco_de', '')
-    preco_por = data.get('preco_por', '')
-    cupom = data.get('cupom', '')
-    descricao = data.get('descricao', '')
+    # 1. Validar dados
+    nome = dados.get('nome')
+    link_original = dados.get('link')
+    tag_afiliado = dados.get('tag_afiliado')
     
-    if not nome or not link:
-        return jsonify({'erro': 'Nome e link são obrigatórios', 'sucesso': False}), 400
+    if not all([nome, link_original, tag_afiliado]):
+        return jsonify({"sucesso": False, "erro": "Nome, Link e Tag são obrigatórios"}), 400
+
+    # 2. Construir o Link de Afiliado (Lógica Crítica)
+    # A maneira mais segura de adicionar a tag é substituir qualquer tag existente ou adicionar
+    # no final se for um link "limpo" (sem query parameters).
+    link_afiliado = link_original
+    tag_param = f"tag={tag_afiliado}"
     
-    # Formata o link com tag de afiliado
-    link_final = formatar_link_afiliado(link, tag_afiliado)
+    # Remove qualquer tag existente (ex: tag=velha-20)
+    link_afiliado = re.sub(r'([?&])tag=[^&]*', r'\1', link_afiliado)
+
+    # Adiciona a nova tag
+    if '?' in link_afiliado:
+        # Se já tem query params, adiciona com '&'
+        if not link_afiliado.endswith(('?', '&')):
+             link_afiliado += '&'
+        link_afiliado += tag_param
+    else:
+        # Se não tem, adiciona com '?'
+        link_afiliado += '?' + tag_param
+        
+    # Limpa possíveis duplos '?' ou '&'
+    link_afiliado = link_afiliado.replace('?&', '?').replace('&&', '&')
     
-    # Monta a mensagem
+
+    # 3. Formatar a Mensagem do Telegram
     mensagem = f"🚨 OFERTA EXCLUSIVA 🚨\n\n"
     mensagem += f"🎁 {nome}\n\n"
     
-    if preco_de:
-        mensagem += f"❌ DE: {preco_de}\n"
-    if preco_por:
-        mensagem += f"🔥 POR: {preco_por}\n"
-    if cupom:
-        mensagem += f"\n🏷️ Cupom: {cupom}\n"
-    if descricao:
-        mensagem += f"\n📝 {descricao}\n"
-    
-    mensagem += f"\n{link_final}"
-    
-    # Envia para o Telegram
-    url_telegram = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        'chat_id': TELEGRAM_CHAT_ID,
-        'text': mensagem,
-        'disable_web_page_preview': False
-    }
-    
-    try:
-        response = requests.post(url_telegram, json=payload)
-        resultado = response.json()
+    if dados.get('preco_de'):
+        mensagem += f"❌ DE: {dados['preco_de']}\n"
+    if dados.get('preco_por'):
+        mensagem += f"🔥 POR: {dados['preco_por']}\n"
         
-        if resultado.get('ok'):
-            return jsonify({'sucesso': True, 'mensagem': 'Enviado com sucesso!'})
-        else:
-            return jsonify({'erro': resultado.get('description', 'Erro desconhecido'), 'sucesso': False}), 500
-            
-    except Exception as e:
-        return jsonify({'erro': str(e), 'sucesso': False}), 500
-
-@app.route('/api/teste-conexao', methods=['GET'])
-def teste_conexao():
-    """Testa a conexão com o Telegram"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
+    if dados.get('cupom'):
+        mensagem += f"\n🏷️ Cupom: {dados['cupom']}\n"
+        
+    if dados.get('descricao'):
+        mensagem += f"\n📝 {dados['descricao']}\n"
+        
+    mensagem += f"\n🔗 {link_afiliado}" # Adiciona o link de afiliado no final da mensagem
     
-    try:
-        response = requests.get(url)
-        return jsonify(response.json())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # 4. Simular Envio
+    if enviar_mensagem_telegram_simulado(mensagem, link_afiliado):
+        return jsonify({"sucesso": True, "mensagem": "Mensagem enviada com sucesso para o Telegram (Simulação)"})
+    else:
+        return jsonify({"sucesso": False, "erro": "Falha na simulação de envio ao Telegram"}), 500
 
+# 5. Inicialização do Servidor
 if __name__ == '__main__':
-    print("🚀 Servidor iniciado em http://localhost:5000")
-    app.run(debug=True, port=5000)
+    print("Servidor Flask inicializado. Acesse http://127.0.0.1:5000/")
+    # Garante que o servidor seja acessível externamente (necessário para alguns ambientes)
+    app.run(debug=True, host='0.0.0.0')
