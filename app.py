@@ -4,14 +4,13 @@ import re
 # Importe as bibliotecas necessárias para web scraping
 import requests
 from bs4 import BeautifulSoup
-# from decimal import Decimal # Para lidar com preços de forma segura
 
 # 1. Configuração do Flask
 app = Flask(__name__)
 # Habilita CORS para permitir que o frontend (index.html) se comunique com o servidor
 CORS(app) 
 
-# Variáveis de Configuração (Substitua pelos seus dados reais no ambiente de produção)
+# Variáveis de Configuração (Substitua pelos seus dados reais para envio real)
 TELEGRAM_BOT_TOKEN = "SEU_TOKEN_BOT_AQUI"
 TELEGRAM_CHAT_ID = "-SEU_CHAT_ID_AQUI" # IDs de canais ou grupos costumam começar com '-'
 
@@ -140,34 +139,51 @@ def buscar_info_produto_real(url):
         "preco_antigo": "R$ 499,90"
     }
 
-def enviar_mensagem_telegram_simulado(mensagem, link_afiliado):
+def enviar_mensagem_telegram(mensagem, link_afiliado):
     """
-    SIMULA o envio da mensagem para o Telegram.
-    Em um ambiente real, você faria uma requisição POST para a API do Telegram.
+    Tenta enviar a mensagem para o Telegram usando a API real.
+    Verifique se TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID estão configurados.
     """
-    print("\n--- SIMULAÇÃO DE ENVIO AO TELEGRAM ---")
-    print(f"Link de Afiliado (Final): {link_afiliado}")
-    print("\nConteúdo da Mensagem:")
-    print(mensagem)
-    print("---------------------------------------\n")
     
-    # Se você quiser integrar de verdade, o código seria algo assim:
-    # telegram_api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    # payload = {
-    #     "chat_id": TELEGRAM_CHAT_ID,
-    #     "text": mensagem,
-    #     "parse_mode": "Markdown" # ou "HTML", dependendo do formato da sua mensagem
-    # }
-    # try:
-    #     response = requests.post(telegram_api_url, data=payload)
-    #     response.raise_for_status()
-    #     return response.json().get('ok', False)
-    # except Exception as e:
-    #     print(f"Erro ao enviar ao Telegram: {e}")
-    #     return False
+    # 1. Checagem de Configuração (Se não estiver configurado, entra em modo de simulação)
+    if TELEGRAM_BOT_TOKEN == "SEU_TOKEN_BOT_AQUI" or TELEGRAM_CHAT_ID == "-SEU_CHAT_ID_AQUI":
+        print("\n--- AVISO: MODO DE SIMULAÇÃO ATIVADO ---")
+        print("Preencha TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID para envio REAL.")
+        print("Link de Afiliado (Final):", link_afiliado)
+        print("Conteúdo da Mensagem:\n", mensagem)
+        print("---------------------------------------\n")
+        return True # Retorna True para não falhar o frontend no modo de simulação
 
-    # Retorna sucesso na simulação
-    return True
+    # 2. Envio REAL para o Telegram
+    telegram_api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": mensagem,
+        "parse_mode": "Markdown" # Usa Markdown para negritos, itálicos, etc.
+    }
+    
+    print("\n--- TENTATIVA DE ENVIO REAL AO TELEGRAM ---")
+    print(f"Chat ID: {TELEGRAM_CHAT_ID}")
+    
+    try:
+        response = requests.post(telegram_api_url, data=payload)
+        response.raise_for_status() # Lança erro para status 4xx/5xx
+        
+        resultado = response.json()
+        if resultado.get('ok'):
+            print("ENVIO SUCESSO. Verifique o Telegram.")
+            return True
+        else:
+            print(f"FALHA NO ENVIO: {resultado.get('description', 'Erro desconhecido da API.')}")
+            return False
+            
+    except requests.exceptions.HTTPError as e:
+        print(f"ERRO HTTP ao enviar ao Telegram: {e.response.text}")
+        return False
+    except Exception as e:
+        print(f"ERRO GERAL ao enviar ao Telegram: {e}")
+        return False
+
 
 # --- Endpoints da API ---
 
@@ -227,27 +243,27 @@ def enviar_telegram():
     
 
     # 3. Formatar a Mensagem do Telegram
-    mensagem = f"🚨 OFERTA EXCLUSIVA 🚨\n\n"
-    mensagem += f"🎁 {nome}\n\n"
+    mensagem = f"🚨 *OFERTA EXCLUSIVA* 🚨\n\n"
+    mensagem += f"🎁 *{nome}*\n\n"
     
     if dados.get('preco_de'):
-        mensagem += f"❌ DE: {dados['preco_de']}\n"
+        mensagem += f"❌ DE: ~{dados['preco_de']}~\n" # Usando ~ para riscar (strikethrough) em Markdown
     if dados.get('preco_por'):
-        mensagem += f"🔥 POR: {dados['preco_por']}\n"
+        mensagem += f"🔥 POR: *{dados['preco_por']}*\n" # Usando * para negrito em Markdown
         
     if dados.get('cupom'):
-        mensagem += f"\n🏷️ Cupom: {dados['cupom']}\n"
+        mensagem += f"\n🏷️ *Cupom*: `{dados['cupom']}`\n" # Usando ` para código
         
     if dados.get('descricao'):
-        mensagem += f"\n📝 {dados['descricao']}\n"
+        mensagem += f"\n📝 _{dados['descricao']}_\n" # Usando _ para itálico
         
-    mensagem += f"\n🔗 {link_afiliado}" # Adiciona o link de afiliado no final da mensagem
+    mensagem += f"\n🔗 [Link para Amazon]({link_afiliado})" # Link formatado para o Telegram
     
-    # 4. Simular Envio
-    if enviar_mensagem_telegram_simulado(mensagem, link_afiliado):
-        return jsonify({"sucesso": True, "mensagem": "Mensagem enviada com sucesso para o Telegram (Simulação)"})
+    # 4. Tentar Envio REAL
+    if enviar_mensagem_telegram(mensagem, link_afiliado):
+        return jsonify({"sucesso": True, "mensagem": "Mensagem enviada com sucesso! Verifique seu Telegram."})
     else:
-        return jsonify({"sucesso": False, "erro": "Falha na simulação de envio ao Telegram"}), 500
+        return jsonify({"sucesso": False, "erro": "Falha no envio para o Telegram. Verifique seu Token e Chat ID."}), 500
 
 # 5. Inicialização do Servidor
 if __name__ == '__main__':
